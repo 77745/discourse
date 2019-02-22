@@ -41,6 +41,7 @@ describe PostAction do
 
       expect(posts.count).to eq(1)
       expect(result.post_action.related_post_id).to eq(posts[0].id.to_i)
+      expect(result.reviewable.meta_topic_id).to eq(posts[0].topic_id)
       expect(posts[0].subtype).to eq(TopicSubtype.notify_moderators)
 
       topic = posts[0].topic
@@ -680,25 +681,27 @@ describe PostAction do
     it "can flag the topic instead of a post" do
       post1 = create_post
       create_post(topic: post1.topic)
-      post_action = PostActionCreator.new(
+      result = PostActionCreator.new(
         Fabricate(:user),
         post1,
         PostActionType.types[:spam],
         flag_topic: true
-      ).perform.post_action
-      expect(post_action.targets_topic).to eq(true)
+      ).perform
+      expect(result.post_action.targets_topic).to eq(true)
+      expect(result.reviewable.payload['targets_topic']).to eq(true)
     end
 
     it "will flag the first post if you flag a topic but there is only one post in the topic" do
       post = create_post
-      post_action = PostActionCreator.new(
+      result = PostActionCreator.new(
         Fabricate(:user),
         post,
         PostActionType.types[:spam],
         flag_topic: true
-      ).perform.post_action
-      expect(post_action.targets_topic).to eq(false)
-      expect(post_action.post_id).to eq(post.id)
+      ).perform
+      expect(result.post_action.targets_topic).to eq(false)
+      expect(result.post_action.post_id).to eq(post.id)
+      expect(result.reviewable.payload['targets_topic']).to eq(false)
     end
 
     it "will unhide the post when a moderator undos the flag on which s/he took action" do
@@ -852,6 +855,7 @@ describe PostAction do
       result = PostActionCreator.spam(Discourse.system_user, post)
       expect(result).to be_success
       expect(result.post_action.related_post_id).to be_nil
+      expect(result.reviewable.meta_topic_id).to be_nil
     end
 
     [:notify_moderators, :notify_user, :spam].each do |post_action_type|

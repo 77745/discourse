@@ -30,6 +30,10 @@ class ReviewableScore < ActiveRecord::Base
     Reviewable::Collection::Item.new(reviewable_score_type)
   end
 
+  def took_action?
+    take_action_bonus > 0
+  end
+
   # A user's flag score is:
   #   1.0 + trust_level + user_accuracy_bonus
   #   (trust_level is 5 for staff)
@@ -63,6 +67,8 @@ end
 #  status                :integer          not null
 #  score                 :float            default(0.0), not null
 #  take_action_bonus     :float            default(0.0), not null
+#  reviewed_by_id        :integer
+#  reviewed_at           :datetime
 #  created_at            :datetime         not null
 #  updated_at            :datetime         not null
 #

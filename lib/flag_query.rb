@@ -18,11 +18,10 @@ module FlagQuery
     offset = opts[:offset] || 0
     per_page = opts[:per_page] || 25
 
-    reviewables = ReviewableFlaggedPost
-      .includes(:reviewable_scores)
-      .viewable_by(current_user)
-      .limit(per_page)
-      .offset(offset)
+    reviewables = ReviewableFlaggedPost.viewable_by(current_user, order: 'created_at DESC')
+    reviewables = reviewables.where(topic_id: opts[:topic_id]) if opts[:topic_id]
+    reviewables = reviewables.where(target_created_by_id: opts[:user_id]) if opts[:user_id]
+    reviewables = reviewables.limit(per_page).offset(offset)
 
     if opts[:filter] == 'old'
       reviewables = reviewables.where("status <> ?", Reviewable.statuses[:pending])
@@ -45,7 +44,6 @@ module FlagQuery
              p.hidden,
              p.deleted_at,
              p.user_deleted,
-             NULL as post_actions,
              NULL as post_action_ids,
              (SELECT created_at FROM post_revisions WHERE post_id = p.id AND user_id = p.user_id ORDER BY created_at DESC LIMIT 1) AS last_revised_at,
              (SELECT COUNT(*) FROM post_actions WHERE (disagreed_at IS NOT NULL OR agreed_at IS NOT NULL OR deferred_at IS NOT NULL) AND post_id = p.id)::int AS previous_flags_count
@@ -64,14 +62,10 @@ module FlagQuery
       post_lookup[p.id] = p
     end
 
+    all_post_actions = []
     reviewables.each do |r|
       post = post_lookup[r.target_id]
-
-      if opts[:rest_api]
-        post.post_action_ids ||= []
-      else
-        post.post_actions ||= []
-      end
+      post.post_action_ids ||= []
 
       r.reviewable_scores.each do |rs|
         disposition =
@@ -85,59 +79,47 @@ module FlagQuery
         action = {
           id: rs.id,
           post_id: post.id,
-          user_id: post.user_id,
+          user_id: rs.user_id,
           post_action_type_id: rs.reviewable_score_type,
           created_at: rs.created_at,
           disposed_by_id: rs.reviewed_by_id,
           disposed_at: rs.reviewed_at,
           disposition: disposition,
-          related_post_id: pa.related_post_id,
-          targets_topic: pa.targets_topic,
-          staff_took_action: pa.staff_took_action
+          targets_topic: r.payload['targets_topic'],
+          staff_took_action: rs.took_action?
         }
-        action[:name_key] = PostActionType.types.key(pa.post_action_type_id)
-      end
-    end
+        action[:name_key] = PostActionType.types.key(rs.reviewable_score_type)
 
-    post_actions = actions.order('post_actions.created_at DESC')
-      .includes(related_post: { topic: { ordered_posts: :user } })
-      .where(post_id: post_ids)
+        if r.meta_topic.present?
+          meta_posts = r.meta_topic.ordered_posts
 
-    all_post_actions = []
+          conversation = {}
+          if response = meta_posts[0]
+            action[:related_post_id] = response.id
 
-    post_actions.each do |pa|
-
-      if pa.related_post && pa.related_post.topic
-        conversation = {}
-        related_topic = pa.related_post.topic
-        if response = related_topic.ordered_posts[0]
-          conversation[:response] = {
-            excerpt: excerpt(response.cooked),
-            user_id: response.user_id
-          }
-          user_ids << response.user_id
-          if reply = related_topic.ordered_posts[1]
-            conversation[:reply] = {
-              excerpt: excerpt(reply.cooked),
-              user_id: reply.user_id
+            conversation[:response] = {
+              excerpt: excerpt(response.cooked),
+              user_id: response.user_id
             }
-            user_ids << reply.user_id
-            conversation[:has_more] = related_topic.posts_count > 2
+            user_ids << response.user_id
+            if reply = meta_posts[1]
+              conversation[:reply] = {
+                excerpt: excerpt(reply.cooked),
+                user_id: reply.user_id
+              }
+              user_ids << reply.user_id
+              conversation[:has_more] = r.meta_topic..posts_count > 2
+            end
           end
+
+          action.merge!(permalink: r.meta_topic.relative_url, conversation: conversation)
         end
 
-        action.merge!(permalink: related_topic.relative_url, conversation: conversation)
-      end
-
-      if opts[:rest_api]
         post.post_action_ids << action[:id]
         all_post_actions << action
-      else
-        post.post_actions << action
+        user_ids << action[:user_id]
+        user_ids << rs.reviewed_by_id if rs.reviewed_by_id
       end
-
-      user_ids << pa.user_id
-      user_ids << pa.disposed_by_id if pa.disposed_by_id
     end
 
     post_custom_field_names = []
@@ -159,6 +141,7 @@ module FlagQuery
       result
     end
 
+    guardian = Guardian.new(current_user)
     users = User.includes(:user_stat).where(id: user_ids.to_a).to_a
     User.preload_custom_fields(users, User.whitelisted_user_custom_fields(guardian))
 

@@ -45,7 +45,7 @@ class PostActionCreator
 
     @message = message
     @flag_topic = flag_topic
-    @related_post_id = nil
+    @meta_post = nil
   end
 
   def perform
@@ -66,7 +66,7 @@ class PostActionCreator
 
     PostAction.limit_action!(@created_by, @post, @post_action_type_id)
 
-    # create related_post if needed
+    # create meta topic / post if needed
     if @message.present? && [:notify_moderators, :notify_user, :spam].include?(@post_action_name)
       creator = create_message_creator
       post = creator.create
@@ -74,7 +74,7 @@ class PostActionCreator
         result.add_errors_from(creator)
         return result
       end
-      @related_post_id = post.id
+      @meta_post = post
     end
 
     begin
@@ -168,10 +168,11 @@ private
   end
 
   def create_post_action
-    targets_topic =
+    @targets_topic = !!(
       if @flag_topic && @post.topic
         @post.topic.reload.posts_count != 1
       end
+    )
 
     where_attrs = {
       post_id: @post.id,
@@ -181,8 +182,8 @@ private
 
     action_attrs = {
       staff_took_action: @take_action,
-      related_post_id: @related_post_id,
-      targets_topic: !!targets_topic,
+      related_post_id: @meta_post&.id,
+      targets_topic: @targets_topic,
       created_at: @created_at
     }
 
@@ -271,7 +272,11 @@ private
       created_by: @created_by,
       target: @post,
       topic: @post.topic,
-      reviewable_by_moderator: true
+      reviewable_by_moderator: true,
+      meta_topic_id: @meta_post&.topic_id,
+      payload: {
+        targets_topic: @targets_topic
+      }
     )
     result.reviewable.add_score(
       @created_by,

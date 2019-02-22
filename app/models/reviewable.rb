@@ -20,6 +20,9 @@ class Reviewable < ActiveRecord::Base
   belongs_to :target_created_by, class_name: 'User'
   belongs_to :reviewable_by_group, class_name: 'Group'
 
+  # A place to discuss this reviewable
+  belongs_to :meta_topic, class_name: 'Topic'
+
   # Optional, for filtering
   belongs_to :topic
   belongs_to :category
@@ -58,7 +61,14 @@ class Reviewable < ActiveRecord::Base
   # pending state and re-use it.
   #
   # You probably want to call this to create your reviewable rather than `.create`.
-  def self.needs_review!(target: nil, topic: nil, created_by:, payload: nil, reviewable_by_moderator: false)
+  def self.needs_review!(
+    target: nil,
+    topic: nil,
+    created_by:,
+    payload: nil,
+    reviewable_by_moderator: false,
+    meta_topic_id: nil
+  )
     target_created_by_id = target.is_a?(Post) ? target.user_id : nil
 
     create!(
@@ -66,10 +76,17 @@ class Reviewable < ActiveRecord::Base
       target_created_by_id: target_created_by_id,
       topic: topic,
       created_by: created_by,
-      reviewable_by_moderator: reviewable_by_moderator
+      reviewable_by_moderator: reviewable_by_moderator,
+      meta_topic_id: meta_topic_id,
+      payload: payload
     )
   rescue ActiveRecord::RecordNotUnique
-    where(target: target).update_all(status: statuses[:pending])
+    args = {
+      status: statuses[:pending]
+    }
+    args[:meta_topic_id] = meta_topic_id if meta_topic_id
+
+    where(target: target).update_all(args)
     find_by(target: target).tap { |r| r.log_history(:transitioned, created_by) }
   end
 
@@ -202,9 +219,9 @@ class Reviewable < ActiveRecord::Base
     end
   end
 
-  def self.viewable_by(user)
+  def self.viewable_by(user, order: nil)
     return none unless user.present?
-    result = order('score desc, created_at desc').includes(
+    result = self.order(order || 'score desc, created_at desc').includes(
       :created_by,
       :topic,
       :target,
@@ -330,6 +347,8 @@ end
 #  target_created_by_id    :integer
 #  payload                 :json
 #  version                 :integer          default(0), not null
+#  meta_topic_id           :integer
+#  latest_score            :datetime
 #  created_at              :datetime         not null
 #  updated_at              :datetime         not null
 #

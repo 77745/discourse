@@ -16,44 +16,34 @@ class Admin::FlagsController < Admin::AdminController
       user_id: params[:user_id],
       offset: offset,
       topic_id: params[:topic_id],
-      per_page: per_page,
-      rest_api: params[:rest_api].present?
+      per_page: per_page
     )
 
-    if params[:rest_api]
-      meta = {
-        types: {
-          disposed_by: 'user'
-        }
+    meta = {
+      types: {
+        disposed_by: 'user'
       }
+    }
 
-      if (total_rows || 0) > (offset + per_page)
-        meta[:total_rows_flagged_posts] = total_rows
-        meta[:load_more_flagged_posts] = admin_flags_filtered_path(
-          filter: params[:filter],
-          offset: offset + per_page,
-          rest_api: params[:rest_api],
-          topic_id: params[:topic_id]
-        )
-      end
-
-      render_json_dump(
-        {
-          flagged_posts: posts,
-          topics: serialize_data(topics, FlaggedTopicSerializer),
-          users: serialize_data(users, FlaggedUserSerializer),
-          post_actions: post_actions
-        },
-        rest_serializer: true,
-        meta: meta
-      )
-    else
-      render_json_dump(
-        posts: posts,
-        topics: serialize_data(topics, FlaggedTopicSerializer),
-        users: serialize_data(users, FlaggedUserSerializer)
+    if (total_rows || 0) > (offset + per_page)
+      meta[:total_rows_flagged_posts] = total_rows
+      meta[:load_more_flagged_posts] = admin_flags_filtered_path(
+        filter: params[:filter],
+        offset: offset + per_page,
+        topic_id: params[:topic_id]
       )
     end
+
+    render_json_dump(
+      {
+        flagged_posts: posts,
+        topics: serialize_data(topics, FlaggedTopicSerializer),
+        users: serialize_data(users, FlaggedUserSerializer),
+        post_actions: post_actions
+      },
+      rest_serializer: true,
+      meta: meta
+    )
   end
 
   def agree

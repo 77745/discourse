@@ -232,10 +232,12 @@ RSpec.describe PostActionsController do
 
         expect(response.status).to eq(200)
 
-        post_action = PostAction.last
-
-        expect(post_action.post_id).to eq(post_1.id)
+        post_action = PostAction.find_by(post: post_1)
         expect(post_action.staff_took_action).to eq(true)
+
+        reviewable = ReviewableFlaggedPost.find_by(target: post_1)
+        score = reviewable.reviewable_scores.first
+        expect(score.took_action?).to eq(true)
       end
 
       it "doesn't pass take_action through if the user isn't staff" do
@@ -243,15 +245,17 @@ RSpec.describe PostActionsController do
 
         post "/post_actions.json", params: {
           id: post_1.id,
-          post_action_type_id: PostActionType.types[:like]
+          post_action_type_id: PostActionType.types[:inappropriate]
         }
 
         expect(response.status).to eq(200)
 
-        post_action = PostAction.last
-
-        expect(post_action.post_id).to eq(post_1.id)
+        post_action = PostAction.find_by(post: post_1)
         expect(post_action.staff_took_action).to eq(false)
+
+        reviewable = ReviewableFlaggedPost.find_by(target: post_1)
+        score = reviewable.reviewable_scores.first
+        expect(score.took_action?).to eq(false)
       end
     end
   end

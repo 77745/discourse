@@ -69,6 +69,8 @@ end
 #  target_created_by_id    :integer
 #  payload                 :json
 #  version                 :integer          default(0), not null
+#  meta_topic_id           :integer
+#  latest_score            :datetime
 #  created_at              :datetime         not null
 #  updated_at              :datetime         not null
 #

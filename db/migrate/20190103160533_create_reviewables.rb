@@ -28,6 +28,9 @@ class CreateReviewables < ActiveRecord::Migration[5.2]
       # Helps us prevent simultaneous updates
       t.integer :version, null: false, default: 0
 
+      # A place to discuss this reviewable
+      t.integer :meta_topic_id, null: true
+
       t.datetime :latest_score, null: true
       t.timestamps
     end

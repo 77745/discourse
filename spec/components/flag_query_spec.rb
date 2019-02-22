@@ -61,33 +61,35 @@ describe FlagQuery do
       user2 = Fabricate(:user)
       user3 = Fabricate(:user)
 
-      PostActionCreator.create(codinghorror, post, :spam)
+      PostActionCreator.spam(codinghorror, post)
       PostActionCreator.create(user2, post, :spam)
-      mod_message = PostActionCreator.new(
+      result = PostActionCreator.new(
         user3,
         post,
         PostActionType.types[:notify_moderators],
         message: "this is a :one::zero:"
-      ).perform.post_action
+      ).perform
+      mod_message = result.post_action
 
-      PostActionCreator.create(codinghorror, post2, :spam)
-      PostActionCreator.create(user2, post2, :spam)
+      PostActionCreator.spam(codinghorror, post2)
+      PostActionCreator.spam(user2, post2)
 
-      posts, topics, users = FlagQuery.flagged_posts_report(admin)
+      posts, topics, users, all_actions = FlagQuery.flagged_posts_report(admin)
 
       expect(posts.count).to eq(2)
       first = posts.first
 
       expect(users.count).to eq(5)
-      expect(first[:post_actions].count).to eq(2)
+      expect(first[:post_action_ids].count).to eq(2)
 
       expect(topics.count).to eq(2)
 
       second = posts[1]
+      expect(second[:post_action_ids].count).to eq(3)
 
-      expect(second[:post_actions].count).to eq(3)
-      expect(second[:post_actions].first[:permalink]).to eq(mod_message.related_post.topic.relative_url)
-      expect(second[:post_actions].first[:conversation][:response][:excerpt]).to match("<img src=")
+      action = all_actions.find { |a| a[:id] == second[:post_action_ids][0] }
+      expect(action[:permalink]).to eq(mod_message.related_post.topic.relative_url)
+      expect(action[:conversation][:response][:excerpt]).to match("<img src=")
 
       posts, users = FlagQuery.flagged_posts_report(admin, offset: 1)
       expect(posts.count).to eq(1)
@@ -104,7 +106,7 @@ describe FlagQuery do
       posts = FlagQuery.flagged_posts_report(admin, user_id: -1000)
       expect(posts[0]).to be_blank
 
-      # chuck post in category a mod can not see and make sure its missing
+      # chuck post in category a mod can not see and make sure it's not returned
       category = Fabricate(:category)
       category.set_permissions(admins: :full)
       category.save
@@ -112,7 +114,6 @@ describe FlagQuery do
       post2.topic.save
 
       posts, users = FlagQuery.flagged_posts_report(moderator)
-
       expect(posts.count).to eq(1)
     end
 
